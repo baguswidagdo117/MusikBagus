@@ -1,0 +1,332 @@
+// BagusMusik database schema
+// MVP memakai SQLite agar mudah dijalankan lokal.
+// Untuk produksi, ganti provider ke "postgresql" (skema kompatibel).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  passwordHash String
+  role         String       @default("KASIR") // OWNER | ADMIN | KASIR | TEKNISI
+  phone        String?
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  technician   Technician?
+  auditLogs    AuditLog[]
+  inventoryTx  InventoryTransaction[]
+  sales        Sale[]
+  payments     Payment[]
+  notifications Notification[]
+}
+
+model Customer {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String
+  whatsapp  String
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  bookings      Booking[]
+  serviceOrders ServiceOrder[]
+  sales         Sale[]
+  payments      Payment[]
+  invoices      Invoice[]
+}
+
+model Technician {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  specialization String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  serviceOrders ServiceOrder[]
+}
+
+model Instrument {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  icon     String?
+  active   Boolean @default(true)
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  category    String
+  description String?
+  price       Decimal  @default(0)
+  durationMin Int      @default(60)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  bookings     Booking[]
+  serviceItems ServiceItem[]
+  saleItems    SaleItem[]
+}
+
+model Booking {
+  id             String   @id @default(cuid())
+  bookingNumber  String   @unique
+  customerId     String
+  instrumentType String
+  brand          String?
+  model          String?
+  serialNumber   String?
+  complaint      String
+  serviceId      String?
+  photoUrl       String?
+  date           DateTime
+  time           String
+  notes          String?
+  status         String   @default("MENUNGGU")
+  source         String?  // web | qr-toko | qr-nota
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  service      Service?      @relation(fields: [serviceId], references: [id])
+  serviceOrder ServiceOrder?
+  payments     Payment[]
+
+  @@index([status])
+  @@index([date])
+}
+
+model ServiceOrder {
+  id               String    @id @default(cuid())
+  orderNumber      String    @unique
+  customerId       String
+  bookingId        String?   @unique
+  instrumentType   String
+  brand            String?
+  model            String?
+  serialNumber     String?
+  initialCondition String?
+  complaint        String
+  diagnosis        String?
+  technicianId     String?
+  serviceFee       Decimal   @default(0)
+  estimateCost     Decimal   @default(0)
+  estimatedDone    DateTime?
+  status           String    @default("DRAFT")
+  technicianNotes  String?
+  beforePhoto      String?
+  afterPhoto       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  customer   Customer      @relation(fields: [customerId], references: [id])
+  booking    Booking?      @relation(fields: [bookingId], references: [id])
+  technician Technician?   @relation(fields: [technicianId], references: [id])
+  items      ServiceItem[]
+  payments   Payment[]
+  invoice    Invoice?
+  sales      Sale[]
+
+  @@index([status])
+}
+
+model ServiceItem {
+  id             String  @id @default(cuid())
+  serviceOrderId String
+  type           String  @default("JASA") // JASA | PART
+  serviceId      String?
+  inventoryId    String?
+  description    String
+  qty            Int     @default(1)
+  unitPrice      Decimal @default(0)
+  subtotal       Decimal @default(0)
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  service      Service?     @relation(fields: [serviceId], references: [id])
+  inventory    Inventory?   @relation(fields: [inventoryId], references: [id])
+}
+
+model Inventory {
+  id            String   @id @default(cuid())
+  sku           String   @unique
+  name          String
+  category      String
+  supplierId    String?
+  purchasePrice Decimal  @default(0)
+  sellPrice     Decimal  @default(0)
+  stock         Int      @default(0)
+  minStock      Int      @default(2)
+  unit          String   @default("pcs")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  supplier   Supplier?              @relation(fields: [supplierId], references: [id])
+  txns       InventoryTransaction[]
+  serviceItems ServiceItem[]
+  saleItems  SaleItem[]
+
+  @@index([stock])
+}
+
+model InventoryTransaction {
+  id          String   @id @default(cuid())
+  inventoryId String
+  type        String   // IN | OUT | ADJUST
+  qty         Int
+  note        String?
+  refType     String?
+  refId       String?
+  userId      String?
+  createdAt   DateTime @default(now())
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+  user      User?     @relation(fields: [userId], references: [id])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  inventory Inventory[]
+}
+
+model Sale {
+  id             String   @id @default(cuid())
+  saleNumber     String   @unique
+  customerId     String?
+  serviceOrderId String?
+  subtotal       Decimal  @default(0)
+  discount       Decimal  @default(0)
+  total          Decimal  @default(0)
+  paid           Decimal  @default(0)
+  paymentStatus  String   @default("UNPAID") // UNPAID | PARTIAL | PAID | REFUND
+  cashierId      String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  customer     Customer?     @relation(fields: [customerId], references: [id])
+  serviceOrder ServiceOrder? @relation(fields: [serviceOrderId], references: [id])
+  cashier      User?         @relation(fields: [cashierId], references: [id])
+  items        SaleItem[]
+  payments     Payment[]
+  invoice      Invoice?
+
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  type        String  @default("JASA") // JASA | PART | LAINNYA
+  inventoryId String?
+  serviceId   String?
+  description String
+  qty         Int     @default(1)
+  unitPrice   Decimal @default(0)
+  subtotal    Decimal @default(0)
+
+  sale      Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  inventory Inventory? @relation(fields: [inventoryId], references: [id])
+  service   Service?   @relation(fields: [serviceId], references: [id])
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  saleId         String?
+  bookingId      String?
+  serviceOrderId String?
+  customerId     String?
+  amount         Decimal  @default(0)
+  method         String   @default("CASH") // CASH | TRANSFER | QRIS | EWALLET
+  type           String   @default("PELUNASAN") // DP | PELUNASAN | REFUND
+  reference      String?
+  paidAt         DateTime @default(now())
+  cashierId      String?
+
+  sale         Sale?         @relation(fields: [saleId], references: [id])
+  booking      Booking?      @relation(fields: [bookingId], references: [id])
+  serviceOrder ServiceOrder? @relation(fields: [serviceOrderId], references: [id])
+  customer     Customer?     @relation(fields: [customerId], references: [id])
+  cashier      User?         @relation(fields: [cashierId], references: [id])
+
+  @@index([paidAt])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  invoiceNumber  String   @unique
+  saleId         String?  @unique
+  serviceOrderId String?  @unique
+  customerId     String
+  total          Decimal  @default(0)
+  status         String   @default("UNPAID") // UNPAID | PAID | VOID
+  issuedAt       DateTime @default(now())
+  dueAt          DateTime?
+
+  sale         Sale?         @relation(fields: [saleId], references: [id])
+  serviceOrder ServiceOrder? @relation(fields: [serviceOrderId], references: [id])
+  customer     Customer      @relation(fields: [customerId], references: [id])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  category    String
+  description String
+  amount      Decimal  @default(0)
+  date        DateTime @default(now())
+  createdBy   String?
+  createdAt   DateTime @default(now())
+}
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  meta      String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
